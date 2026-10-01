@@ -1,0 +1,278 @@
+# %pip install numpy matplotlib scikit-image
+
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize
+from numpy.fft import fft2, ifft2, fftshift, ifftshift
+from skimage.metrics import structural_similarity as ssim
+from skimage.metrics import peak_signal_noise_ratio as psnr
+
+# files
+!wget https://raw.githubusercontent.com/Lukeli0425/Galaxy-Deconv/main/tutorials/galaxy.npy
+!wget https://raw.githubusercontent.com/Lukeli0425/Galaxy-Deconv/main/tutorials/psf.npy
+
+# load galaxy images (clear)
+galaxy = np.load('galaxy.npy')
+psf = np.load('psf.npy')
+
+# Normalize to a flux of 1.
+galaxy = galaxy / galaxy.sum()
+psf = psf / psf.sum()
+
+# galaxy images
+fig = plt.figure(figsize=(12.5, 5))
+ax = plt.subplot(1, 2, 1)
+norm = Normalize(vmin=0, vmax=0.02)
+plt.imshow(galaxy, cmap='magma', norm=norm)
+plt.title('Galaxy', fontsize=16)
+cax = fig.add_axes([ax.get_position().x1+0.015, ax.get_position().y0, 0.018, ax.get_position().height])
+cb = plt.colorbar(cax=cax, norm=norm)
+
+ax = plt.subplot(1, 2, 2)
+norm = Normalize(vmin=0, vmax=0.04)
+plt.imshow(psf, cmap='magma', norm=norm)
+plt.title('Point Spread Function', fontsize=16)
+cax = fig.add_axes([ax.get_position().x1+0.015, ax.get_position().y0, 0.018, ax.get_position().height])
+cb = plt.colorbar(cax=cax, norm=norm)
+
+# forward model
+def pad_double(img):
+    """Pad the image with zeros to double its size.
+
+    Args:
+        img (`np.ndarray`): Input image.
+
+    Returns:
+        `np.ndarray`: Padded image.
+    """
+    H, W = img.shape[-2], img.shape[-1]
+    return np.pad(img, ((W//2, W//2), (H//2, H//2)), 'constant', constant_values=(0, 0))
+
+def crop_half(img):
+    """Crop the image to half of its size.
+
+    Args:
+        img (`np.ndarray`): Input image.
+
+    Returns:
+        `np.ndarray`: Cropped image.
+    """
+    H, W = img.shape
+    return img[H//4:3*H//4, W//4:3*W//4]
+
+def convolve(x, h):
+    """Convolve two 2D images using FFT.
+
+    Args:
+        x (`np.ndarray`): Input image 1.
+        h (`np.ndarray`): Input image 2.
+
+    Returns:
+        `np.ndarray`: Convolved image.
+    """
+    h, x = pad_double(h), pad_double(x)
+    y = fftshift(ifft2(fft2(ifftshift(h)) * fft2(ifftshift(x)))).real
+    return crop_half(y)
+
+# Telescope & CCD parameters (LSST)
+pixel_scale = 0.2                   # Pixel scale (aresec), determines the image resolution.
+exp_time = 30.                      # Exposure time (2*15 seconds).
+sky_brightness = 20.46              # Sky brightness (absolute magnitude) in i band.
+zero_point = 28.17                  # Instrumental zero point in i band, i.e. absolute magnitude that would produce one e- per second.
+qe = 0.94                           # CCD Quantum efficiency.
+read_noise = 8.8                    # Standrad deviation of Gaussain read noise (e-/pixel).
+dark_current = 0.2                  # Dark current (e-/pixel/second).
+
+# Calculate flux of sky backgroud
+def get_flux(exp_time, ab_magnitude, zero_point, qe):
+    """Calculate flux (e-/arcsec^2) from magnitude.
+
+    Args:
+        exp_time (`float`): Exposure time (s).
+        ab_magnitude (`float`): Absolute magnitude.
+        zero_point (`float`): Instrumental zero point, i.e. absolute magnitude that would produce one e- per second.
+        qe (`float`): CCD Quantum efficiency.
+
+    Returns:
+        `float`: Flux (e-/arcsec^2).
+    """
+    flux = exp_time*10**(-0.4*(ab_magnitude-zero_point)*qe)
+    return flux
+
+# Calculate the per pixel sky level (e-/pixel).
+sky_level_pixel = (pixel_scale ** 2) * get_flux(ab_magnitude=sky_brightness, exp_time=exp_time, zero_point=zero_point, qe=qe)
+print('Sky level per pixel: {:.5g} e-'.format(sky_level_pixel))
+
+# Calculate SNR 
+def get_total_noise(sky_level_pixel, dark_current, exp_time, read_noise):
+    """Calculate the noise in LSST images.
+
+    Args:
+        sky_level_pixel (`float`): Sky background level (e-/pixel).
+        dark_current (`float`): Dark current (e-/pixel/second).
+        exp_time (`float`): Total exposure time (s).
+        read_noise (`float`): Standard deviation of CCD read noise (e-).
+
+    Returns:
+        `float`: Standard deviation of total noise (e-/pixel).
+    """
+    noise = np.sqrt(sky_level_pixel + (dark_current * exp_time) + (2*read_noise**2))
+    return noise
+
+sigma = get_total_noise(sky_level_pixel, dark_current, exp_time, read_noise)
+print('sigma: {:.4g} e-'.format(sigma))
+
+# Calculate scaling factor & convolve
+snr_list = [60, 100, 200, 300]
+rng = np.random.default_rng()
+gt_list = []
+obs_list = []
+for snr in snr_list :
+  alpha = (snr*sigma)/(np.sqrt(np.sum(galaxy**2)))
+  g = galaxy * alpha
+  n = rng.normal(0, sigma, g.shape)
+  y = convolve(g, psf) + n
+  gt_list.append(g)
+  obs_list.append(y)
+plt.imshow(g)
+
+# Deconvolution
+def wiener(y, h, lam):
+    """Wiener Deconvolution.
+
+    Args:
+        y (`np.ndarray`): Input blurry image.
+        h (`np.ndarray`): Blur kernel (point spread function).
+        lamda  (`float`): Regularization parameter.
+    """
+    H = fft2(ifftshift(psf))
+    H_star = np.conj(H)
+    Y = fft2(ifftshift(y))
+
+    numerator = H_star*Y
+    divisor = (np.abs(H)**2) + lam
+
+    x = (fftshift(ifft2(numerator/divisor))).real
+    return x
+
+# Plot
+lam_list = [0.01, 0.1, 1, 10] # Change to compare different regularization parameters.
+
+fig = plt.figure(figsize=(16, 10.5))
+for idx, (x, y, snr) in enumerate(zip(gt_list, obs_list, snr_list)):
+    norm = Normalize(vmin=y.min(), vmax=x.max())
+    ax1 = plt.subplot(4,6,6*idx+1)
+    plt.imshow(y, cmap='magma', norm=norm)
+    plt.ylabel(f'SNR = {snr}', fontsize=15)
+    ax1.set_xticks([])
+    ax1.set_yticks([])
+    plt.title('PSNR={:.1f}'.format(psnr(x, y, data_range=x.max()-x.min())), fontsize=11, loc='left', x=0.03, y=0.0, color='white')
+    plt.title('SSIM={:.2f}'.format(ssim(x, y, data_range=x.max()-x.min())), fontsize=11, loc='right', x=0.5, y=0.84, color='white')
+    if idx == 0:
+        plt.title('Observed Galaxy', fontsize=15)
+
+
+    for i, lam in enumerate(lam_list):
+        x_star = wiener(y, psf, lam)
+        ax2 = plt.subplot(4,6,6*idx+i+2)
+        plt.imshow(wiener(y, psf, lam), cmap='magma', norm=norm)
+        ax2.set_xticks([])
+        ax2.set_yticks([])
+        plt.title('PSNR={:.1f}'.format(psnr(x, x_star, data_range=x.max()-x.min())), fontsize=11, loc='left', x=0.03, y=0.0, color='white')
+        plt.title('SSIM={:.2f}'.format(ssim(x, x_star, data_range=x.max()-x.min())), fontsize=11, loc='right', x=0.5, y=0.84, color='white')
+        if idx == 0:
+            plt.title('Wiener ($\lambda=${:.1g})'.format(lam), fontsize=15)
+
+
+    ax4 = plt.subplot(4,6,6*idx+6)
+    plt.imshow(x, cmap='magma', norm=norm)
+    plt.title('PSNR={:.1f}'.format(psnr(x, x, data_range=x.max()-x.min())), fontsize=11, loc='left', x=0.03, y=0.0, color='white')
+    plt.title('SSIM={:.2f}'.format(ssim(x, x, data_range=x.max()-x.min())), fontsize=11, loc='right', x=0.5, y=0.84, color='white')
+    if idx == 0:
+        plt.title('Ground Truth', fontsize=15)
+    cax = fig.add_axes([ax2.get_position().x1+0.14, ax2.get_position().y0, 0.01, ax2.get_position().height])
+    cb = plt.colorbar(cax=cax, norm=norm)
+    cb.set_label('Flux (e-)', fontsize=14)
+    ax4.set_xticks([])
+    ax4.set_yticks([])
+
+# Richardson-Lucy
+def richardson_lucy(y, h, sky_level_pixel, n_iter):
+    """Richardson-Lucy Deconvolution.
+
+    Args:
+        y (`np.ndarray`): Input blurry image.
+        h (`np.ndarray`): Blur kernel (point spread function).
+        sky_level_pixel (`float`): Sky level (e-/pixel).
+        n_iter (`int`): Number of iterations.
+    """
+    y = y + sky_level_pixel
+    # Add the sky level.
+    ones = np.ones_like(y) # All-one image.
+    H = fft2(ifftshift(h))
+    # 2D Fourier Transform of the inversely shifted PSF.
+    x = np.ones_like(y) # Initial guess.
+    for _ in range(n_iter):
+        X = fft2(ifftshift(x))
+        # 2D Fourier Transform of the inversely shifted x
+        Hx = fftshift(ifft2((H * X))).real
+        # Real solutions of the shifted 2D inverse Fourier Transform of the product of H and X
+
+        H_star = np.conjugate(H)
+        # Complex conjugate of H
+        yHx = fft2(ifftshift(y/Hx))
+        # 2D Fourier Transform of the inversely shifted y/Hx
+        numerator = fftshift(ifft2(H_star * yHx)).real
+        # Real solutions of the shifted 2D inverse Fourier Transform of the product H_star and yHx
+
+        onesx = fft2(ifftshift(ones))
+        # 2D Fourier Transform of the inversely shifted ones array
+        divisor = fftshift(ifft2(H_star * onesx)).real
+        # Real solutions of the shifted 2D inverse Fourier Transform of the product H_star and onesx
+
+        ###  Complete Richardson-Lucy update. ###
+        x = x * numerator/divisor
+  
+    return x - sky_level_pixel  # Subtract the sky level.
+
+# Plot
+iters_list = [1, 10, 50, 100] # Change to compare different iteration counts.
+
+fig = plt.figure(figsize=(16, 10.5))
+for idx, (x, y, snr) in enumerate(zip(gt_list, obs_list, snr_list)):
+    norm = Normalize(vmin=y.min(), vmax=x.max())
+    ax1 = plt.subplot(4,6,6*idx+1)
+    plt.imshow(y, cmap='magma', norm=norm)
+    plt.ylabel(f'SNR = {snr}', fontsize=15)
+    ax1.set_xticks([])
+    ax1.set_yticks([])
+    plt.title('PSNR={:.1f}'.format(psnr(x, y, data_range=x.max()-x.min())), fontsize=11, loc='left', x=0.03, y=0.0, color='white')
+    plt.title('SSIM={:.2f}'.format(ssim(x, y, data_range=x.max()-x.min())), fontsize=11, loc='right', x=0.5, y=0.84, color='white')
+    if idx == 0:
+        plt.title('Observed Galaxy', fontsize=15)
+
+
+    for i, n_iters in enumerate(iters_list):
+        x_star = richardson_lucy(y, psf, sky_level_pixel, n_iters)
+        ax2 = plt.subplot(4,6,6*idx+i+2)
+        plt.imshow(richardson_lucy(y, psf, sky_level_pixel, n_iters), cmap='magma', norm=norm)
+        ax2.set_xticks([])
+        ax2.set_yticks([])
+        plt.title('PSNR={:.1f}'.format(psnr(x, x_star, data_range=x.max()-x.min())), fontsize=11, loc='left', x=0.03, y=0.0, color='white')
+        plt.title('SSIM={:.2f}'.format(ssim(x, x_star, data_range=x.max()-x.min())), fontsize=11, loc='right', x=0.5, y=0.84, color='white')
+        if idx == 0:
+            plt.title(f'Richardson-Lucy ({n_iters})', fontsize=13)
+
+
+    ax4 = plt.subplot(4,6,6*idx+6)
+    plt.imshow(x, cmap='magma', norm=norm)
+    plt.title('PSNR={:.1f}'.format(psnr(x, x, data_range=x.max()-x.min())), fontsize=11, loc='left', x=0.03, y=0.0, color='white')
+    plt.title('SSIM={:.2f}'.format(ssim(x, x, data_range=x.max()-x.min())), fontsize=11, loc='right', x=0.5, y=0.84, color='white')
+    if idx == 0:
+        plt.title('Ground Truth', fontsize=15)
+    cax = fig.add_axes([ax2.get_position().x1+0.14, ax2.get_position().y0, 0.01, ax2.get_position().height])
+    cb = plt.colorbar(cax=cax, norm=norm)
+    cb.set_label('Flux (e-)', fontsize=14)
+    ax4.set_xticks([])
+    ax4.set_yticks([])
+
