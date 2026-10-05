@@ -1,0 +1,53 @@
+!wget https://raw.githubusercontent.com/CIERA-Northwestern/REACHpy/main/Module_2/data/HRstars.csv
+
+import numpy as np
+temp = np.loadtxt('HRstars.csv', usecols=(0), delimiter=',')
+lumin = np.loadtxt('HRstars.csv', usecols=(1), delimiter=',')
+print(temp, lumin)
+
+# create HR diagram
+import matplotlib.pyplot as plt
+plt.scatter(temp, lumin)
+plt.xlabel('temperature(k)')
+plt.ylabel('luminosity(solar luminosties)')
+
+# adjust diagram
+plt.scatter(temp, lumin)
+plt.xlabel('temperature(k)')
+plt.ylabel('luminosity(solar luminosties)')
+plt.xlim([30000,1000])
+
+# scale
+plt.scatter(temp, lumin)
+plt.xlabel('temperature(k)')
+plt.ylabel('luminosity(solar luminosties)')
+plt.xlim([30000,1000])
+plt.xscale('log')
+plt.yscale('log')
+
+# color
+import matplotlib
+cm = matplotlib.colormaps['RdYlBu']  ##This is the color map for the stars
+x = np.log(temp)
+plt.scatter(temp, lumin, cmap= cm, c  = x)
+plt.xlabel('temperature(k)')
+plt.ylabel('luminosity(solar luminosties)')
+plt.xlim([30000,1000])
+plt.xscale('log')
+plt.yscale('log')
+
+# Approximate the sizes of the stars with the equation above and multiply them by 15.
+T_sun=5780. # K
+R_over_Rsun = (((lumin)**0.5)/((temp/T_sun)**2))
+r_star = 15*R_over_Rsun
+
+# size representation
+cm = matplotlib.colormaps['RdYlBu']  ##This is the color map for the stars
+x = np.log(temp)
+plt.scatter(temp, lumin, cmap= cm, c  = x, s = r_star)
+plt.xlabel('temperature(k)')
+plt.ylabel('luminosity(solar luminosties)')
+plt.xlim([30000,1000])
+plt.xscale('log')
+plt.yscale('log')
+plt.title('HR Diagram')
