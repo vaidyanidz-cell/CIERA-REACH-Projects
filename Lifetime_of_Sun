@@ -1,0 +1,34 @@
+# calculate the gravitational potential energy of the sun
+G = 6.6743e-11
+M = 1.989e30
+R = 6.957e8
+GPE = (3*G*(M**2))/(5*R)
+print(GPE)
+
+# Kelvin-Helmholz timescale
+Sun_Time = GPE/3.839e26
+print(Sun_Time)
+Sun_Time_Years = Sun_Time/3.154e7
+print(Sun_Time_Years)
+
+# compare H*4 and He mass
+mass_Hydrogen = 1.67e-27
+mass_Helium = 6.645e-27
+
+if mass_Hydrogen*4 == mass_Helium :
+  print('Yes!')
+else :
+  print(f'{mass_Hydrogen*4} and {mass_Helium}')
+
+# mass energy of the sun in yrs
+m = 1.989e30
+c = 3e8
+E = m*(c**2)
+print(E)
+Years = E/3.839e26
+print(Years)
+
+# adjust for efficiency
+fraction = (4*(1.67e-27)-(6.645e-27))/(4*1.67e-27)
+x = fraction*E
+print(x)
