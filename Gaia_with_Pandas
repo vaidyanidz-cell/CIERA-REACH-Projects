@@ -1,0 +1,64 @@
+!wget https://zenodo.org/record/569876/files/alldata.hdf
+
+# Import pandas
+import pandas as pd
+
+df = pd.read_hdf('alldata.hdf')
+print(df.columns)
+
+# [2057050 rows x 17 columns]
+
+print(f'{df.shape[0]:d} rows')
+print(f'{df.memory_usage(index=True, deep=True).sum()/1e6:.1f} MB')
+
+import pandas as pd
+df = pd.read_hdf('alldata.hdf')
+df = pd.read_hdf('alldata.hdf')
+col = df[['ra', 'dec', 'parallax']]
+
+print(f'{df.shape[0]:d} rows')
+print(f'{df.memory_usage(index=True, deep=True).sum()/1e6:.1f} MB')
+
+import matplotlib.pyplot as plt
+fig, axes = plt.subplots(1, 3, figsize=(17, 3))
+col.hist(['ra', 'dec', 'parallax'],
+             ax=axes,
+             xlabelsize=15,
+             ylabelsize=15,
+             bins=50)
+
+neg_par = col[col['parallax'] < 0 ].copy()
+neg_par.reset_index(drop=True, inplace=True)
+
+non_neg_parallax_df = col[col['parallax'] > 0].copy()
+non_neg_parallax_df.reset_index(drop=True, inplace=True)
+non_neg_parallax_df
+
+# 2,026,210 stars
+
+fig, axes = plt.subplots(1, 3, figsize=(17, 3))
+non_neg_parallax_df.hist(['ra', 'dec', 'parallax'],
+             ax=axes,
+             xlabelsize=15,
+             ylabelsize=15,
+             bins=50)
+
+# distance in parsec = 1/(parallax in arcsec).
+non_neg_parallax_df['dist'] = (1/(non_neg_parallax_df['parallax']/1000))
+non_neg_parallax_df
+
+import numpy as np
+np.min(non_neg_parallax_df['dist'])
+
+np.mean(non_neg_parallax_df['dist'])
+
+df.plot.scatter('ra', 'dec', alpha = 0.5)
+plt.xscale('log')
+plt.yscale('log')
+plt.xlim(10e-4, 10e2)
+plt.ylim(10e-4, 10e2)
+
+df.plot.hexbin('ra', 'dec', gridsize=300, cmap='inferno'  )
+
+new = df[['parallax', 'l', 'b']]
+new.plot.hexbin('l', 'b', gridsize = 300, cmap = 'inferno')
