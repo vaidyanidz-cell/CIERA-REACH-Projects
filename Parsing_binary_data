@@ -1,0 +1,55 @@
+!wget https://raw.githubusercontent.com/CIERA-Northwestern/REACHpy/main/Module_3/data/binint_data.txt
+import pandas as pd
+colnames = ['type', 't', 'b', 'v', 'out_type', 'mass', 'radius', 'Eint', 'id', 'ktype', 'a', 'e',
+            'DE/E', 'DL/L', 'DE_GW/E', 'v_esc_cluster[km/s]', 't_cpu', 'nstar', 'nobj', 'i [j k]', 'outcome(s)', 'type2'  ]
+with open('binint_data.txt', 'r') as initial_binint:
+    file_content = initial_binint.read()
+delimiter = '********************************************************************************'
+data_blocks = file_content.split(delimiter)
+parsed_data = []
+typecol, tcol, bcol, vcol, out_type, mass, radius, Eint, id, ktype = [], [], [], [], [], [], [], [], [], []
+acol, ecol, DE_E, DL_L, DE_GW_E, v_esc, t_cpu, nstar, nobj, ijk = [], [], [], [], [], [], [], [], [], []
+outcome, type2 = [], []
+
+
+for block in data_blocks :
+  if block.strip():
+    lines = block.strip().split('\n')
+    for line in lines :
+      line.split(' ')
+      if line.startswith('type='):
+          typecol.append(line)
+print(typecol)
+
+with open('binint_data.txt') as data_file  :
+  raw_data = data_file.read()
+chunk = raw_data.split('********************************************************************************')[1]
+
+def read_time(line) :
+  int_type = line.split()[0].split('=')[0]
+  t = float(line.split()[1].split('=')[1])
+  return int_type, t
+
+def read_params(line) :
+  return
+def read_single(line) :
+  return
+def read_binary(line) :
+  return
+def read_triple(line) :
+  return
+def read_input(line) :
+  return
+def read_status(line) :
+  return
+def read_outcome(line) :
+  return
+def read_output(line) :
+  return
+chunk_lines = chunk.split('/n')
+for line in chunk_lines :
+  if "type=B" in line :
+    int_type, time = read_time(line)
+print(int_type, time)
+
+
