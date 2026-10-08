@@ -1,0 +1,14 @@
+!wget https://raw.githubusercontent.com/CIERA-Northwestern/REACHpy/main/Module_3/data/exoplanet_data.csv
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+df = pd.read_csv('exoplanet_data.csv',header = 0, comment='#'  )
+pd.read_csv('exoplanet_data.csv',header = 0, comment='#'  )
+# 1: has 5030 rows
+#2
+unique_methods = df['discoverymethod'].unique()
+print(len(unique_methods))
+#3
+fig, (ax1, ax2) = plt.subplots(nrows =2, ncols = 1, figsize=(30, 30))
+ax1.hist(df['disc_year'], bins = df['disc_year'].max() - df['disc_year'].min() + 1, cumulative=True)
+ax2.hist(df['discoverymethod'], bins = 11, cumulative=True, edgecolor = 'k')
